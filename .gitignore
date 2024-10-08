@@ -30,3 +30,6 @@ record*
 
 # example .res files
 tests/_results*
+
+# JSON logs of pytest runs
+.pytest_reports/*

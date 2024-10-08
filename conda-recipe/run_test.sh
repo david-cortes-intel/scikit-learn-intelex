@@ -31,6 +31,11 @@ if [[ count -eq 0 ]]; then
     exit 1
 fi
 
+mkdir -p .pytest_reports
+if [[ ! -z .pytest_reports ]]; then
+    rm .pytest_reports/*.json
+fi
+
 echo "Start testing ..."
 return_code=0
 
@@ -39,31 +44,31 @@ return_code=$(($return_code + $?))
 
 echo "Pytest run of legacy unittest ..."
 echo ${daal4py_dir}
-pytest --verbose --pyargs -s ${daal4py_dir}/tests
+pytest --verbose --pyargs -s ${daal4py_dir}/tests --json-report --json-report-file=.pytest_reports/legacy_report.json
 return_code=$(($return_code + $?))
 
 echo "NO_DIST=$NO_DIST"
 if [[ ! $NO_DIST ]]; then
     echo "MPI pytest run of legacy unittest ..."
     mpirun --version
-    mpirun -n 4 pytest --verbose --pyargs -s ${daal4py_dir}/tests/test*spmd*.py
+    mpirun -n 4 pytest --verbose --pyargs -s ${daal4py_dir}/tests/test*spmd*.py --json-report --json-report-file=.pytest_reports/mpi_legacy_report.json
     return_code=$(($return_code + $?))
 fi
 
 echo "Pytest of daal4py running ..."
-pytest --verbose --pyargs ${daal4py_dir}/daal4py/sklearn
+pytest --verbose --pyargs ${daal4py_dir}/daal4py/sklearn  --json-report --json-report-file=.pytest_reports/daal4py_report.json
 return_code=$(($return_code + $?))
 
 echo "Pytest of sklearnex running ..."
-pytest --verbose --pyargs sklearnex
+pytest --verbose --pyargs sklearnex --json-report --json-report-file=.pytest_reports/sklearnex_report.json
 return_code=$(($return_code + $?))
 
 echo "Pytest of onedal running ..."
-pytest --verbose --pyargs ${daal4py_dir}/onedal
+pytest --verbose --pyargs ${daal4py_dir}/onedal--json-report --json-report-file=.pytest_reports/onedal_report.json
 return_code=$(($return_code + $?))
 
 echo "Global patching test running ..."
-python ${daal4py_dir}/.ci/scripts/test_global_patch.py
+python ${daal4py_dir}/.ci/scripts/test_global_patch.py --json-report --json-report-file=.pytest_reports/global_patch_report.json
 return_code=$(($return_code + $?))
 
 exit $return_code
