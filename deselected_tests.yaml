@@ -388,6 +388,9 @@ deselected_tests:
   # These fail due to not printing everything that scikit-learn prints on verbose mode
   - cluster/tests/test_k_means.py::test_kmeans_verbose
 
+  # Here, scikit-learn compares against a hard-coded expected result which is less optimal than oneDAL's
+  - preprocessing/tests/test_discretization.py::test_nonuniform_strategies[kmeans
+
   # --------------------------------------------------------
   # No need to test daal4py patching
 reduced_tests:
