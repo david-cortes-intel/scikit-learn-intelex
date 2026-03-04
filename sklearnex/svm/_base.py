@@ -300,7 +300,7 @@ class BaseSVC(BaseSVM):
         return patching_status
 
     # overwrite _validate_targets for array API support
-    def _onedal_validate_targets(self, X, y):
+    def _onedal_validate_targets(self, X, y, sample_weight=None):
         xp, is_array_api_compliant = get_namespace(X, y)
 
         # _validate_targets equivalent:
@@ -311,7 +311,9 @@ class BaseSVC(BaseSVM):
             if is_array_api_compliant
             else xp.unique(y_, return_inverse=True)
         )
-        self.class_weight_ = _compute_class_weight(self.class_weight, classes=cls, y=y_)
+        self.class_weight_ = _compute_class_weight(
+            self.class_weight, classes=cls, y=y_, sample_weight=sample_weight
+        )
         if cls.shape[0] < 2:
             raise ValueError(
                 "The number of classes has to be greater than one; got %d class"
@@ -339,7 +341,7 @@ class BaseSVC(BaseSVM):
             accept_sparse="csr",
         )
 
-        y = self._onedal_validate_targets(X, y)
+        y = self._onedal_validate_targets(X, y, sample_weight=sample_weight)
 
         if (
             hasattr(self, "probability")

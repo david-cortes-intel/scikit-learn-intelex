@@ -739,7 +739,10 @@ class ForestClassifier(BaseForest, _sklearn_ForestClassifier):
 
         if self.class_weight is not None:
             class_weights = _compute_class_weight(
-                self.class_weight, classes=classes, y=y_store_unique_indices
+                self.class_weight,
+                classes=classes,
+                y=y_store_unique_indices,
+                sample_weight=sample_weight,
             )
             expanded_class_weight = xp.ones_like(y)
             # This for loop is O(n*m) where n is # of classes and m # of samples
