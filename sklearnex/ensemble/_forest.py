@@ -1146,10 +1146,6 @@ class ForestRegressor(BaseForest, _sklearn_ForestRegressor):
         return self._onedal_estimator.predict(X, queue=queue)
 
     def _onedal_score(self, X, y, sample_weight=None, queue=None):
-        if sklearn_check_version("1.9"):
-            xp, _, device = get_namespace_and_device(X)
-            y = check_array(y, ensure_2d=False)
-            y = move_to(y, xp=xp, device=device)
         return r2_score(
             y, self._onedal_predict(X, queue=queue), sample_weight=sample_weight
         )
