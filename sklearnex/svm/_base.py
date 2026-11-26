@@ -33,7 +33,7 @@ from sklearn.utils.metaestimators import available_if
 from sklearn.utils.multiclass import check_classification_targets
 from sklearn.utils.validation import check_is_fitted, column_or_1d
 
-from daal4py.sklearn._utils import sklearn_check_version
+from daal4py.sklearn._utils import daal_check_version, sklearn_check_version
 from onedal.utils.validation import _num_samples
 
 if sklearn_check_version("1.9"):
@@ -202,11 +202,12 @@ class BaseSVM(oneDALEstimator):
         return False
 
     def _raise_immutable_error(self) -> None:
-        raise ValueError(
-            "Cannot manually assign to fitted attributes in multi-class"
-            "models. Please refit the estimator, or modify the values of"
-            " the arrays instead (e.g. `x[:] = k`)."
-        )
+        if not daal_check_version((2026, "P", 200)):
+            raise ValueError(
+                "Cannot manually assign to fitted attributes in multi-class"
+                "models. Please refit the estimator, or modify the values of"
+                " the arrays instead (e.g. `x[:] = k`)."
+            )
 
     @property
     def dual_coef_(self):
@@ -330,12 +331,18 @@ class BaseSVM(oneDALEstimator):
             self._onedal_estimator._onedal_model = None
 
     def _create_onedal_estimator_from_fitted_attrs(self):
-        assert not self._is_multi_class_classifier()
+        if not daal_check_version((2026, "P", 200)):
+            assert not self._is_multi_class_classifier()
         self._onedal_estimator = self._onedal_factory(**self._get_onedal_params())
+        n_support_ = getattr(self, "n_support_", None)
+        if n_support_ is not None and n_support_.shape[0] > 2:
+            xp, _ = get_namespace(n_support_)
+            n_support_ = xp.reshape(n_support_, ((1, -1)))
         self._onedal_estimator._create_model(
             self.support_vectors_,
             self.dual_coef_,
             self.intercept_,
+            n_support_,
         )
 
     # Note: this is a copy-paste from scikit-learn, with the difference
@@ -406,7 +413,7 @@ class BaseSVM(oneDALEstimator):
             # come up with some better heuristic to determine when it will be
             # beneficial to use oneDAL in such cases.
             X = data[0]
-            patching_status.and_conditions(
+            daal_ready = patching_status.and_conditions(
                 [
                     (
                         isinstance(self.kernel, str)
@@ -417,13 +424,35 @@ class BaseSVM(oneDALEstimator):
                         hasattr(self, "_onedal_estimator")
                         or (
                             not self._is_multi_class_classifier()
-                            and (
-                                not sp.issparse(self.support_vectors_)
-                                or (_num_samples(X) > 1)
-                            )
+                            or daal_check_version((2026, "P", 200))
+                        ),
+                        "Multi-class prediction from scikit-learn fallback not "
+                        "supported on older oneDAL versions",
+                    ),
+                ]
+            )
+            if not daal_ready:
+                return patching_status
+            patching_status.and_conditions(
+                [
+                    (
+                        hasattr(self, "_onedal_estimator")
+                        or (_num_samples(X) > 1)
+                        or (
+                            not self._is_multi_class_classifier()
+                            and not sp.issparse(self.support_vectors_)
                         ),
                         "Single-row prediction from a scikit-learn model has"
                         "substantial overhead due to data conversions",
+                    ),
+                    (
+                        # This should only happen after manual attribute assignments
+                        not (
+                            is_classifier(self)
+                            and hasattr(self, "_n_support")
+                            and self._n_support.dtype != np.int32
+                        ),
+                        "Cannot fall back to scikit-learn with oneDAL-produced attributes",
                     ),
                 ]
             )
@@ -757,21 +786,26 @@ class BaseSVC(BaseSVM):
                 self._probA = xp.empty(0)
                 self._probB = xp.empty(0)
 
-        indices = xp.take(y, self.support_, axis=0)
-        if sklearn_check_version("1.9"):
-            xp, is_array_api, device = get_namespace_and_device(X)
-            if is_array_api:
-                self._n_support = xp.zeros(
-                    self.classes_.shape[0], dtype=xp.int64, device=device
-                )
+        if self.classes_.shape[0] > 2 and daal_check_version((2026, "P", 200)):
+            self._n_support = self._onedal_estimator.n_support_per_class_
+            xp, _ = get_namespace(self._n_support)
+            self._n_support = xp.reshape(self._n_support, (-1,))
+        else:
+            indices = xp.take(y, self.support_, axis=0)
+            if sklearn_check_version("1.9"):
+                xp, is_array_api, device = get_namespace_and_device(X)
+                if is_array_api:
+                    self._n_support = xp.zeros(
+                        self.classes_.shape[0], dtype=xp.int64, device=device
+                    )
+                else:
+                    self._n_support = xp.zeros_like(self.classes_, dtype=xp.int64)
             else:
                 self._n_support = xp.zeros_like(self.classes_, dtype=xp.int64)
-        else:
-            self._n_support = xp.zeros_like(self.classes_, dtype=xp.int64)
-        for i in range(self.classes_.shape[0]):
-            self._n_support[i] = xp.sum(
-                xp.asarray(indices == i, dtype=xp.int64), dtype=xp.int64
-            )
+            for i in range(self.classes_.shape[0]):
+                self._n_support[i] = xp.sum(
+                    xp.asarray(indices == i, dtype=xp.int64), dtype=xp.int64
+                )
 
         if hasattr(self._onedal_estimator.n_iter_, "shape"):
             self.n_iter_ = xp.reshape(self._onedal_estimator.n_iter_, (-1,))

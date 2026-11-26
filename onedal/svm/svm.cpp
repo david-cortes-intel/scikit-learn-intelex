@@ -198,6 +198,14 @@ void init_model(py::module_& m) {
         cls.def_property("second_class_response",
                          &model_t::get_second_class_response,
                          class_2_setter);
+#if defined(ONEDAL_VERSION) && ONEDAL_VERSION >= 20260200
+        cls.def_property("class_count",
+                         &model_t::template get_class_count<>,
+                         &model_t::template set_class_count<>);
+        cls.def_property("n_support_per_class",
+                         &model_t::template get_n_support_per_class<>,
+                         &model_t::template set_n_support_per_class<>);
+#endif
     }
 }
 

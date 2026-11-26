@@ -21,6 +21,7 @@ from scipy import sparse as sp
 
 from daal4py.sklearn._utils import is_sparse
 
+from .. import onedal_check_version
 from .._device_offload import supports_queue
 from ..common._backend import bind_default_backend
 from ..common._estimator_checks import _check_is_fitted
@@ -131,10 +132,15 @@ class BaseSVM(ABC):
             max_iter = 10000 if self.max_iter == -1 else self.max_iter
             self.n_iter_ = max(1, max_iter)
 
+        # Not applicable to regressors, nor binary classifiers, nor older oneDAL versions
+        self.n_support_per_class_ = getattr(result.model, "n_support_per_class", None)
+        if self.n_support_per_class_ is not None:
+            self.n_support_per_class_ = from_table(self.n_support_per_class_, like=X)
+
         self._onedal_model = result.model
         return self
 
-    def _create_model(self, support_vectors_, dual_coef_, intercept_):
+    def _create_model(self, support_vectors_, dual_coef_, intercept_, n_support_=None):
         m = self.model()
 
         self.support_vectors_ = support_vectors_
@@ -149,6 +155,13 @@ class BaseSVM(ABC):
             m.coeffs = to_table(dual_coef_.T.tocsr())
         else:
             m.coeffs = to_table(dual_coef_.T)
+        if onedal_check_version(2026, 2, 0):
+            m.class_count = self.class_count_
+            if self.class_count_ > 2:
+                self.n_support_per_class_ = n_support_
+                m.n_support_per_class = to_table(self.n_support_per_class_)
+            else:
+                self.n_support_per_class_ = None
 
         self._onedal_model = m
 
@@ -165,7 +178,9 @@ class BaseSVM(ABC):
         X = to_table(X, queue=queue)
 
         if self._onedal_model is None:
-            self._create_model(self.support_vectors_, self.dual_coef_, self.intercept_)
+            self._create_model(
+                self.support_vectors_, self.dual_coef_, self.intercept_, self.support_
+            )
 
         params = self._get_onedal_params(X)
 
@@ -262,8 +277,8 @@ class SVC(BaseSVM):
             algorithm=algorithm,
         )
 
-    def _create_model(self, support_vectors_, dual_coef_, intercept_) -> None:
-        super()._create_model(support_vectors_, dual_coef_, intercept_)
+    def _create_model(self, support_vectors_, dual_coef_, intercept_, support_) -> None:
+        super()._create_model(support_vectors_, dual_coef_, intercept_, support_)
         self._onedal_model.first_class_response = 0
         self._onedal_model.second_class_response = 1
 
@@ -373,8 +388,8 @@ class NuSVC(BaseSVM):
             algorithm=algorithm,
         )
 
-    def _create_model(self, support_vectors_, dual_coef_, intercept_) -> None:
-        super()._create_model(support_vectors_, dual_coef_, intercept_)
+    def _create_model(self, support_vectors_, dual_coef_, intercept_, support_) -> None:
+        super()._create_model(support_vectors_, dual_coef_, intercept_, support_)
         self._onedal_model.first_class_response = 0
         self._onedal_model.second_class_response = 1
 
